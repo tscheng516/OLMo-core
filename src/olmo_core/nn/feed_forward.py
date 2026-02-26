@@ -23,6 +23,7 @@ __all__ = [
     "FeedForwardConfig",
     "FeedForward",
     "NormalizedFeedForward",
+    "FeedForwardQuadratic",
 ]
 
 
@@ -41,11 +42,18 @@ class ActivationFunction(StrEnum):
     GELU with tanh approximation, used for GeGLU.
     """
 
+    sigmoid = "sigmoid"
+    """
+    Sigmoid activation, used for the quadratic feed-forward variant.
+    """
+
     def build(self) -> Callable[[torch.Tensor], torch.Tensor]:
         if self == ActivationFunction.silu:
             return F.silu
         elif self == ActivationFunction.gelu_tanh:
             return functools.partial(F.gelu, approximate="tanh")
+        elif self == ActivationFunction.sigmoid:
+            return torch.sigmoid
         else:
             raise NotImplementedError(self)
 
@@ -63,6 +71,11 @@ class FeedForwardType(StrEnum):
     normalized = "normalized"
     """
     ➡️ :class:`NormalizedFeedForward`
+    """
+
+    quadratic = "quadratic"
+    """
+    ➡️ :class:`FeedForwardQuadratic`
     """
 
 
@@ -131,6 +144,8 @@ class FeedForwardConfig(ModuleConfig):
                         f"NormalizedFeedForward only supports 'silu' activation, got '{activation}'"
                     )
                 return NormalizedFeedForward(**kwargs)
+            elif self.name == FeedForwardType.quadratic:
+                return FeedForwardQuadratic(**kwargs)
             else:
                 raise NotImplementedError(self.name)
         except TypeError as e:
@@ -207,6 +222,56 @@ class FeedForward(nn.Module):
         del seq_len
         # 6 FLOPs per parameter (2 ops * 3 for forward+backward)
         return 6 * sum(p.numel() for p in self.parameters())
+
+
+class FeedForwardQuadratic(FeedForward):
+    """
+    Feed-forward variant that applies a quadratic gating on the second projection.
+
+    forward: w2( activation(w1(x)) * v * v ) where v = w3(x)
+    """
+
+    def __init__(
+        self,
+        *,
+        d_model: int,
+        hidden_size: int,
+        bias: bool = True,
+        dtype: torch.dtype = torch.float32,
+        init_device: str = "cpu",
+        activation: ActivationFunction = ActivationFunction.sigmoid,
+    ):
+        super().__init__(
+            d_model=d_model,
+            hidden_size=hidden_size,
+            bias=bias,
+            dtype=dtype,
+            init_device=init_device,
+            activation=activation,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Run the quadratic feed-forward on the input ``x``.
+
+        :param x: The input of shape ``(*, d_model)``.
+        """
+        v = self.w3(x)
+        return self.w2(self.activation_fn(self.w1(x)) * v * v)
+    
+    def apply_tp(
+        self,
+        tp_mesh: DeviceMesh,
+        input_layout: Optional[Placement] = None,
+        output_layout: Optional[Placement] = None,
+        use_local_output: bool = True,
+        float8_enabled: bool = False,
+    ):
+        del tp_mesh, input_layout, output_layout, use_local_output, float8_enabled
+
+        raise NotImplementedError(
+            "TP is not implemented yet for the quadratic feed-forward variant"
+        )
 
 
 @beta_feature
