@@ -151,6 +151,9 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
     tokenizer_config = TokenizerConfig.gpt2()
 
     # docs: start-model-config
+    # NOTE: To use the quadratic feed-forward variant and pass a custom `sparser`,
+    # you can either use the new factory `olmo2_custom_370M` or provide CLI/YAML overrides,
+    # e.g. `model.block.feed_forward.name=quadratic model.block.feed_forward.sparser=0.5`.
     try:
         factory = getattr(TransformerConfig, opts.model_factory)
     except AttributeError:
@@ -196,6 +199,13 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
             save_folder=save_folder,
             save_overwrite=True,
             metrics_collect_interval=5,
+            # NOTE: If you want to use the quadratic feed-forward variant and pass a
+            # custom `sparser` field, either use a model factory that sets
+            # `feed_forward=FeedForwardConfig(..., name=FeedForwardType.quadratic, sparser=...)`
+            # (e.g. the `olmo2_custom_370M` factory added to TransformerConfig), or
+            # pass CLI/YAML overrides like:
+            #   model.block.feed_forward.name=quadratic
+            #   model.block.feed_forward.sparser=0.5
             cancel_check_interval=5,
         )
         .with_callback("gpu_monitor", GPUMemoryMonitorCallback())
