@@ -144,6 +144,19 @@ class TransformerBlockType(StrEnum):
     """
     ➡️ :class:`MoEHybridReorderedNormTransformerBlock`
     """
+    gated = "gated"
+    """
+    ➡️ :class:`GatedTransformerBlock`
+    """
+    gated_reordered = "gated_reordered"
+    """
+    ➡️ :class:`GatedReorderedNormTransformerBlock`
+    """
+
+    gated_peri = "gated_peri"
+    """
+    ➡️ :class:`GatedPeriNormTransformerBlock`
+    """
 
 
 @dataclass
@@ -215,6 +228,9 @@ class TransformerBlockConfig(ModuleConfig):
         cache: Optional[BufferCache] = None,
     ) -> "TransformerBlockBase":
         from .block import (
+            GatedTransformerBlock,
+            GatedReorderedNormTransformerBlock,
+            GatedPeriNormTransformerBlock,
             LayerNormScaledTransformerBlock,
             MoEHybridReorderedNormTransformerBlock,
             MoEHybridTransformerBlock,
@@ -247,6 +263,12 @@ class TransformerBlockConfig(ModuleConfig):
                 return PeriNormTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.normalized:
                 return NormalizedTransformerBlock(**kwargs)
+            elif self.name == TransformerBlockType.gated:
+                return GatedTransformerBlock(**kwargs)
+            elif self.name == TransformerBlockType.gated_reordered:
+                return GatedReorderedNormTransformerBlock(**kwargs)
+            elif self.name == TransformerBlockType.gated_peri:
+                return GatedPeriNormTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.moe:
                 return MoETransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.moe_reordered_norm:
@@ -623,7 +645,7 @@ class TransformerConfig(ModelConfig):
             n_layers=kwargs.pop("n_layers", 16),
             n_heads=kwargs.pop("n_heads", 16),
             vocab_size=vocab_size,
-            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
+            block_name=kwargs.pop("block_name", TransformerBlockType.gated_reordered),
             qk_norm=kwargs.pop("qk_norm", True),
             rope_theta=kwargs.pop("rope_theta", 500_000),
             layer_norm_eps=1e-6,
