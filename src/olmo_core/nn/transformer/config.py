@@ -603,7 +603,7 @@ class TransformerConfig(ModelConfig):
         )
 
     @classmethod
-    def olmo2_gated_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+    def olmo2_gated_reordered_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
         A 100M OLMo2 model config.
         """
@@ -614,6 +614,42 @@ class TransformerConfig(ModelConfig):
             n_heads=kwargs.pop("n_heads", 8),
             vocab_size=vocab_size,
             block_name=kwargs.pop("block_name", TransformerBlockType.gated_reordered),
+            qk_norm=kwargs.pop("qk_norm", True),
+            rope_theta=kwargs.pop("rope_theta", 500_000),
+            layer_norm_eps=1e-6,
+            **kwargs,
+        )
+    
+    @classmethod
+    def olmo2_gated_peri_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        """
+        A 100M OLMo2 model config.
+        """
+        return cls.llama_like(
+            d_model=512,
+            hidden_size_multiplier=1.5,
+            n_layers=kwargs.pop("n_layers", 12),
+            n_heads=kwargs.pop("n_heads", 8),
+            vocab_size=vocab_size,
+            block_name=kwargs.pop("block_name", TransformerBlockType.gated_peri),
+            qk_norm=kwargs.pop("qk_norm", True),
+            rope_theta=kwargs.pop("rope_theta", 500_000),
+            layer_norm_eps=1e-6,
+            **kwargs,
+        )
+    
+    @classmethod
+    def olmo2_gated_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        """
+        A 100M OLMo2 model config.
+        """
+        return cls.llama_like(
+            d_model=512,
+            hidden_size_multiplier=1.5,
+            n_layers=kwargs.pop("n_layers", 12),
+            n_heads=kwargs.pop("n_heads", 8),
+            vocab_size=vocab_size,
+            block_name=kwargs.pop("block_name", TransformerBlockType.gated),
             qk_norm=kwargs.pop("qk_norm", True),
             rope_theta=kwargs.pop("rope_theta", 500_000),
             layer_norm_eps=1e-6,
