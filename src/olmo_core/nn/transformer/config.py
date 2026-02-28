@@ -649,13 +649,13 @@ class TransformerConfig(ModelConfig):
             qk_norm=kwargs.pop("qk_norm", True),
             rope_theta=kwargs.pop("rope_theta", 500_000),
             layer_norm_eps=1e-6,
-            feed_forward=FeedForwardConfig(
-                hidden_size=kwargs.pop("ff_hidden_size", 4096),
-                name=kwargs.pop("feed_forward_name", FeedForwardType.quadratic),
-                activation=kwargs.pop("activation", ActivationFunction.sigmoid),
-                bias=kwargs.pop("bias", False),
-                dtype=kwargs.get("dtype", DType.float32),
-            ),
+            # feed_forward=FeedForwardConfig(
+            #     hidden_size=kwargs.pop("ff_hidden_size", 4096),
+            #     name=kwargs.pop("feed_forward_name", FeedForwardType.quadratic),
+            #     activation=kwargs.pop("activation", ActivationFunction.sigmoid),
+            #     bias=kwargs.pop("bias", False),
+            #     dtype=kwargs.get("dtype", DType.float32),
+            # ),
             **kwargs,
         )
 
