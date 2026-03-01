@@ -14,6 +14,8 @@ __all__ = [
     "LayerNormType",
     "LayerNormConfig",
     "LayerNorm",
+    "DynamicErf",
+    "DynamicTanh",
     "RMSNorm",
     "CuTeRMSNorm",
     "FusedRMSNorm",
@@ -45,6 +47,14 @@ class LayerNormType(StrEnum):
     l2_norm = "l2_norm"
     """
     ➡️ :class:`L2Norm`
+    """
+    derf = "derf"
+    """
+    ➡️ Dynamic erf-based alternative to LayerNorm
+    """
+    dyt = "dyt"
+    """
+    ➡️ Dynamic tanh-based alternative to LayerNorm
     """
 
 
@@ -100,6 +110,10 @@ class LayerNormConfig(ModuleConfig):
         try:
             if self.name == LayerNormType.default:
                 return LayerNorm(size=size, init_device=init_device, **kwargs)
+            elif self.name == LayerNormType.derf:
+                return DynamicErf(size=size, init_device=init_device, **kwargs)
+            elif self.name == LayerNormType.dyt:
+                return DynamicTanh(size=size, init_device=init_device, **kwargs)
             elif self.name == LayerNormType.rms:
                 return RMSNorm(size=size, init_device=init_device, **kwargs)
             elif self.name == LayerNormType.cute_rms:
@@ -198,6 +212,137 @@ class LayerNorm(nn.Module):
             )
 
             return x.to(og_dtype)
+
+
+class DynamicErf(nn.Module):
+    """
+    Dynamic erf-based module used as an alternative to LayerNorm.
+
+    This module intentionally does not perform normalization; instead it
+    applies an elementwise erf transform with learnable scalar `alpha` and
+    `shift`, followed by optional elementwise affine scaling/bias.
+    """
+
+    def __init__(
+        self,
+        *,
+        size: int,
+        alpha_init_value: float = 0.5,
+        shift_init_value: float = 0.0,
+        elementwise_affine: bool = True,
+        bias: bool = True,
+        full_precision: bool = True,
+        dtype: torch.dtype = torch.float32,
+        init_device: str = "cpu",
+    ):
+        super().__init__()
+        self.normalized_shape = (size,)
+        self.full_precision = full_precision
+
+        # scalar parameters controlling the nonlinearity
+        self.alpha = nn.Parameter(torch.ones(1, dtype=dtype, device=init_device) * alpha_init_value)
+        self.shift = nn.Parameter(torch.ones(1, dtype=dtype, device=init_device) * shift_init_value)
+
+        if elementwise_affine:
+            self.weight = nn.Parameter(torch.ones(self.normalized_shape, dtype=dtype, device=init_device))
+            if bias:
+                self.bias = nn.Parameter(torch.zeros(self.normalized_shape, dtype=dtype, device=init_device))
+            else:
+                self.register_parameter("bias", None)
+        else:
+            self.register_parameter("bias", None)
+            self.register_parameter("weight", None)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        if hasattr(self, "weight") and self.weight is not None:
+            torch.nn.init.ones_(self.weight)
+        if hasattr(self, "bias") and self.bias is not None:
+            torch.nn.init.zeros_(self.bias)
+
+    def extra_repr(self):
+        return f"{tuple(self.normalized_shape)}, alpha={float(self.alpha.item())}, shift={float(self.shift.item())}"
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        with torch.autocast(enabled=False, device_type=x.device.type):
+            og_dtype = x.dtype
+            if self.full_precision:
+                x = x.float()
+
+            y = torch.erf(self.alpha.type_as(x) * x + self.shift.type_as(x))
+
+            if getattr(self, "weight", None) is not None:
+                if getattr(self, "bias", None) is not None:
+                    y = self.weight.type_as(y) * y + self.bias.type_as(y)
+                else:
+                    y = self.weight.type_as(y) * y
+
+            return y.to(og_dtype)
+
+
+class DynamicTanh(nn.Module):
+    """
+    Dynamic tanh-based module used as an alternative to LayerNorm.
+
+    Similar to `DynamicErf` but uses tanh(alpha * x) as the nonlinearity.
+    """
+
+    def __init__(
+        self,
+        *,
+        size: int,
+        alpha_init_value: float = 0.5,
+        shift_init_value: float = 0.0,
+        elementwise_affine: bool = True,
+        bias: bool = True,
+        full_precision: bool = True,
+        dtype: torch.dtype = torch.float32,
+        init_device: str = "cpu",
+    ):
+        super().__init__()
+        self.normalized_shape = (size,)
+        self.full_precision = full_precision
+
+        self.alpha = nn.Parameter(torch.ones(1, dtype=dtype, device=init_device) * alpha_init_value)
+        self.shift = nn.Parameter(torch.ones(1, dtype=dtype, device=init_device) * shift_init_value)
+
+        if elementwise_affine:
+            self.weight = nn.Parameter(torch.ones(self.normalized_shape, dtype=dtype, device=init_device))
+            if bias:
+                self.bias = nn.Parameter(torch.zeros(self.normalized_shape, dtype=dtype, device=init_device))
+            else:
+                self.register_parameter("bias", None)
+        else:
+            self.register_parameter("bias", None)
+            self.register_parameter("weight", None)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        if hasattr(self, "weight") and self.weight is not None:
+            torch.nn.init.ones_(self.weight)
+        if hasattr(self, "bias") and self.bias is not None:
+            torch.nn.init.zeros_(self.bias)
+
+    def extra_repr(self):
+        return f"{tuple(self.normalized_shape)}, alpha={float(self.alpha.item())}, shift={float(self.shift.item())}"
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        with torch.autocast(enabled=False, device_type=x.device.type):
+            og_dtype = x.dtype
+            if self.full_precision:
+                x = x.float()
+
+            y = torch.tanh(self.alpha.type_as(x) * x + self.shift.type_as(x))
+
+            if getattr(self, "weight", None) is not None:
+                if getattr(self, "bias", None) is not None:
+                    y = self.weight.type_as(y) * y + self.bias.type_as(y)
+                else:
+                    y = self.weight.type_as(y) * y
+
+            return y.to(og_dtype)
 
 
 class RMSNorm(LayerNorm):

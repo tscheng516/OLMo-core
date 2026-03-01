@@ -286,7 +286,7 @@ def parser_args():
     parser.add_argument(
         "--model-factory",
         type=str,
-        default="llama2_271M",
+        default="olmo2_100M",
         help="""The name of the model factory to use.
         This can be any classmethod on the TransformerConfig class.""",
     )
