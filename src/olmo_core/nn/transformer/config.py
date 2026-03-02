@@ -540,6 +540,65 @@ class TransformerConfig(ModelConfig):
             layer_norm_eps=1e-6,
             **kwargs,
         )
+    
+    @classmethod
+    def olmo2_all_derf_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        """
+        A 100M OLMo2 model config where all LayerNorm usages and attention Q/K norms
+        are replaced with DERF modules.
+        """
+        # Build the standard 100M config first
+        config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
+
+        # Create a LayerNormConfig that points to the DERF implementation
+        derf_ln = LayerNormConfig(name=LayerNormType.derf, eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None, bias=False, dtype=config.dtype)
+
+        # Replace global embedding norm
+        config.embedding_norm = derf_ln
+
+        # Replace block-level layer norm and attention qk_norm
+        if isinstance(config.block, TransformerBlockConfig):
+            config.block.layer_norm = derf_ln
+            if hasattr(config.block, "sequence_mixer") and config.block.sequence_mixer is not None:
+                config.block.sequence_mixer.qk_norm = derf_ln
+                config.block.sequence_mixer.use_head_qk_norm = config.block.sequence_mixer.use_head_qk_norm
+
+        # Replace LM head norm if present
+        if getattr(config, "lm_head", None) is not None:
+            try:
+                config.lm_head.layer_norm = derf_ln
+            except Exception:
+                pass
+
+        return config
+
+    @classmethod
+    def olmo2_derf_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        """
+        A 100M OLMo2 model config where all LayerNorm usages
+        are replaced with DERF modules.
+        """
+        # Build the standard 100M config first
+        config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
+
+        # Create a LayerNormConfig that points to the DERF implementation
+        derf_ln = LayerNormConfig(name=LayerNormType.derf, eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None, bias=False, dtype=config.dtype)
+
+        # Replace global embedding norm
+        config.embedding_norm = derf_ln
+
+        # Replace block-level layer norm
+        if isinstance(config.block, TransformerBlockConfig):
+            config.block.layer_norm = derf_ln
+
+        # Replace LM head norm if present
+        if getattr(config, "lm_head", None) is not None:
+            try:
+                config.lm_head.layer_norm = derf_ln
+            except Exception:
+                pass
+
+        return config
 
     @classmethod
     def olmo2_14M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
