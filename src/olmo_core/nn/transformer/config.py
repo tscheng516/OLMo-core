@@ -603,7 +603,7 @@ class TransformerConfig(ModelConfig):
         )
 
     @classmethod
-    def olmo2_dyt_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+    def olmo2_all_dyt_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
         A 100M OLMo2 model config where all LayerNorm usages and attention Q/K norms
         are replaced with dynamic tanh (`dyt`) modules.
@@ -623,6 +623,34 @@ class TransformerConfig(ModelConfig):
             if hasattr(config.block, "sequence_mixer") and config.block.sequence_mixer is not None:
                 config.block.sequence_mixer.qk_norm = dyt_ln
                 config.block.sequence_mixer.use_head_qk_norm = config.block.sequence_mixer.use_head_qk_norm
+
+        # Replace LM head norm if present
+        if getattr(config, "lm_head", None) is not None:
+            try:
+                config.lm_head.layer_norm = dyt_ln
+            except Exception:
+                pass
+
+        return config
+
+    @classmethod
+    def olmo2_dyt_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        """
+        A 100M OLMo2 model config where all LayerNorm usages
+        are replaced with dynamic tanh (`dyt`) modules.
+        """
+        # Build the standard 100M config first
+        config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
+
+        # Create a LayerNormConfig that points to the DynamicTanh implementation
+        dyt_ln = LayerNormConfig(name=LayerNormType.dyt, eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None, bias=False, dtype=config.dtype)
+
+        # Replace global embedding norm
+        config.embedding_norm = dyt_ln
+
+        # Replace block-level layer norm and attention qk_norm
+        if isinstance(config.block, TransformerBlockConfig):
+            config.block.layer_norm = dyt_ln
 
         # Replace LM head norm if present
         if getattr(config, "lm_head", None) is not None:
