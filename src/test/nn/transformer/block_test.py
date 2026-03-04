@@ -120,7 +120,7 @@ def test_tensor_parallel_transformer_block(
 
 
 def test_hybrid_norm_transformer_block_structure():
-    """Verify HybridNormTransformerBlock has a post-attention norm but no feed-forward norm."""
+    """Verify HybridNormTransformerBlock has post-attention norm, qk_norm, v_norm, no FFN norm."""
     d_model = 64
     attn_kwargs = {"name": AttentionType.default, "n_heads": 4, "use_flash": False}
     block = _build_block(
@@ -139,6 +139,10 @@ def test_hybrid_norm_transformer_block_structure():
     ), "Block should have feed_forward_residual_stream"
     # Feed-forward norm must NOT be present.
     assert not hasattr(block, "feed_forward_norm"), "Block should NOT have feed_forward_norm"
+    # qk_norm and v_norm must be set on the attention module.
+    assert block.attention.q_norm is not None, "Attention should have q_norm"
+    assert block.attention.k_norm is not None, "Attention should have k_norm"
+    assert block.attention.v_norm is not None, "Attention should have v_norm"
 
 
 def test_hybrid_norm_transformer_block_forward():
@@ -177,6 +181,9 @@ def test_hybrid_norm_transformer_block_via_config():
 
     assert isinstance(block, HybridNormTransformerBlock)
     assert not hasattr(block, "feed_forward_norm")
+    assert block.attention.q_norm is not None
+    assert block.attention.k_norm is not None
+    assert block.attention.v_norm is not None
 
     bs, seq_len = 2, 16
     x = torch.randn(bs, seq_len, d_model)
@@ -185,23 +192,21 @@ def test_hybrid_norm_transformer_block_via_config():
 
 
 def test_hybrid_norm_num_params():
-    """HybridNormTransformerBlock should count one fewer norm than the default block."""
+    """
+    HybridNormTransformerBlock num_params accounts for one block-level norm (not two),
+    plus auto-added qk_norm (q_norm + k_norm) and v_norm in the attention.
+    """
     from olmo_core.nn.transformer.config import (
         TransformerBlockConfig,
         TransformerBlockType,
     )
 
     d_model = 64
-    attn_cfg = AttentionConfig(name=AttentionType.default, n_heads=4, use_flash=False)
+    n_heads = 4
+    attn_cfg = AttentionConfig(name=AttentionType.default, n_heads=n_heads, use_flash=False)
     ff_cfg = FeedForwardConfig(hidden_size=4 * d_model)
     ln_cfg = LayerNormConfig()
 
-    default_cfg = TransformerBlockConfig(
-        sequence_mixer=attn_cfg,
-        feed_forward=ff_cfg,
-        layer_norm=ln_cfg,
-        name=TransformerBlockType.default,
-    )
     hybrid_cfg = TransformerBlockConfig(
         sequence_mixer=attn_cfg,
         feed_forward=ff_cfg,
@@ -209,5 +214,12 @@ def test_hybrid_norm_num_params():
         name=TransformerBlockType.hybrid_norm,
     )
 
-    norm_params = ln_cfg.num_params(d_model)
-    assert hybrid_cfg.num_params(d_model) == default_cfg.num_params(d_model) - norm_params
+    # Build the block and count actual parameters.
+    block = hybrid_cfg.build(d_model=d_model, block_idx=0, n_layers=1)
+    actual_params = sum(p.numel() for p in block.parameters())
+    assert hybrid_cfg.num_params(d_model) == actual_params
+
+    # The attention should have qk_norm and v_norm set automatically.
+    assert block.attention.q_norm is not None
+    assert block.attention.k_norm is not None
+    assert block.attention.v_norm is not None

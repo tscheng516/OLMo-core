@@ -195,6 +195,7 @@ class AttentionConfig(SequenceMixerConfig["SequenceMixer"]):
     rope: Optional[RoPEConfig] = None
     clip_qkv: Optional[float] = None
     qk_norm: Optional[LayerNormConfig] = None
+    v_norm: Optional[LayerNormConfig] = None
     dropout: Optional[float] = None
     use_flash: Optional[bool] = None
     backend: Optional[AttentionBackendName] = None
@@ -232,6 +233,10 @@ class AttentionConfig(SequenceMixerConfig["SequenceMixer"]):
             else:
                 params += self.qk_norm.num_params(n_heads * head_dim)  # q_norm
                 params += self.qk_norm.num_params(n_kv_heads * head_dim)  # k_norm
+
+        # Block attention V norm.
+        if self.v_norm is not None:
+            params += self.v_norm.num_params(n_kv_heads * head_dim)  # v_norm
 
         # Block attention out.
         params += n_heads * head_dim * d_model
@@ -337,6 +342,7 @@ class Attention(SequenceMixer):
     :param rope: The config for RoPE, if RoPE should be used.
     :param clip_qkv: Clip QKV to this value, if set.
     :param qk_norm: Configuration a layer norm for queries and keys.
+    :param v_norm: Configuration for a layer norm applied to values.
     :param dropout: Dropout probability.
     :param use_flash: Deprecated, use ``backend="flash_2"`` instead.
     :param backend: The attention backend to use. If not set, it will be chosen automatically.
@@ -356,6 +362,7 @@ class Attention(SequenceMixer):
         rope: Optional[RoPEConfig] = None,
         clip_qkv: Optional[float] = None,
         qk_norm: Optional[LayerNormConfig] = None,
+        v_norm: Optional[LayerNormConfig] = None,
         dropout: float = 0.0,
         softmax_scale: Optional[float] = None,
         use_flash: Optional[bool] = None,
@@ -419,6 +426,12 @@ class Attention(SequenceMixer):
                 self.k_norm = qk_norm.build(
                     size=self.n_kv_heads * self.head_dim, init_device=init_device
                 )
+
+        self.v_norm: Optional[LayerNorm] = None
+        if v_norm is not None:
+            self.v_norm = v_norm.build(
+                size=self.n_kv_heads * self.head_dim, init_device=init_device
+            )
 
         self.rope: Optional[Union[RotaryEmbedding, ComplexRotaryEmbedding]] = None
         if rope is not None:
@@ -562,6 +575,9 @@ class Attention(SequenceMixer):
             if self.k_norm is not None:
                 k = self.k_norm(k)
 
+        if self.v_norm is not None:
+            v = self.v_norm(v)
+
         # NOTE: use -1 instead of `n_heads` / `n_kv_heads` to infer actual local size when
         # using tensor parallelism.
         # shape: (batch_size, seq_len, n_heads (local), head_dim)
@@ -661,7 +677,10 @@ class Attention(SequenceMixer):
                 output_layouts=None if self.k_norm is None else Shard(1),
                 use_local_output=self.k_norm is None,
             ),
-            "w_v": colwise_parallel(),
+            "w_v": colwise_parallel(
+                output_layouts=None if self.v_norm is None else Shard(1),
+                use_local_output=self.v_norm is None,
+            ),
             "w_out": rowwise_parallel(
                 output_layouts=output_layout, use_local_output=use_local_output
             ),
@@ -677,6 +696,8 @@ class Attention(SequenceMixer):
             plan["q_norm"] = SequenceParallel(use_local_output=True, output_layouts=Shard(2))
         if self.k_norm is not None:
             plan["k_norm"] = SequenceParallel(use_local_output=True, output_layouts=Shard(2))
+        if self.v_norm is not None:
+            plan["v_norm"] = SequenceParallel(use_local_output=True, output_layouts=Shard(2))
 
         parallelize_module(
             module=self,

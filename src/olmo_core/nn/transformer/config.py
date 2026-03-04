@@ -302,8 +302,23 @@ class TransformerBlockConfig(ModuleConfig):
         if self.name == TransformerBlockType.normalized:
             block_params += 2 * d_model
 
+        # For hybrid_norm, resolve the sequence_mixer with auto-added qk_norm/v_norm so
+        # that num_params matches what the block actually builds.
+        seq_mixer = self.sequence_mixer
+        if self.name == TransformerBlockType.hybrid_norm and self.layer_norm is not None:
+            from copy import copy
+
+            from ..attention import AttentionConfig
+
+            if isinstance(seq_mixer, AttentionConfig):
+                seq_mixer = copy(seq_mixer)
+                if seq_mixer.qk_norm is None:
+                    seq_mixer.qk_norm = self.layer_norm
+                if seq_mixer.v_norm is None:
+                    seq_mixer.v_norm = self.layer_norm
+
         # Block attention params.
-        block_params += self.sequence_mixer.num_params(d_model)
+        block_params += seq_mixer.num_params(d_model)
         if self.layer_norm is not None:
             block_params += self.layer_norm.num_params(d_model)
 

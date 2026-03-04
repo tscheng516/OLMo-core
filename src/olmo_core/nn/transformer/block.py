@@ -311,12 +311,13 @@ class ReorderedNormTransformerBlock(TransformerBlock):
 
 class HybridNormTransformerBlock(TransformerBlock):
     """
-    A transformer block implementing HybridNorm: LayerNorm is applied only *after* the attention
-    output (post-attention norm) before adding to the residual stream. No LayerNorm is applied
-    before or after the feed-forward sub-layer.
+    A transformer block implementing HybridNorm: QK-norm and V-norm are applied inside the
+    attention sub-layer, and a post-attention LayerNorm is applied to the attention output
+    before adding to the residual stream. No LayerNorm is applied before or after the
+    feed-forward sub-layer.
 
-    Compared to :class:`ReorderedNormTransformerBlock`, the feed-forward norm is omitted entirely,
-    reducing the total number of norm parameters from two to one per block.
+    If the ``sequence_mixer`` config does not already have ``qk_norm`` or ``v_norm`` set,
+    this block automatically enables them using the block's ``layer_norm`` config.
     """
 
     def __init__(
@@ -334,6 +335,18 @@ class HybridNormTransformerBlock(TransformerBlock):
         init_device: str = "cpu",
         cache: Optional[BufferCache] = None,
     ):
+        from copy import copy
+
+        from ..attention import AttentionConfig
+
+        # Ensure qk_norm and v_norm are set on the attention config.
+        if isinstance(sequence_mixer, AttentionConfig):
+            sequence_mixer = copy(sequence_mixer)
+            if sequence_mixer.qk_norm is None:
+                sequence_mixer.qk_norm = layer_norm
+            if sequence_mixer.v_norm is None:
+                sequence_mixer.v_norm = layer_norm
+
         super().__init__(
             d_model=d_model,
             block_idx=block_idx,
