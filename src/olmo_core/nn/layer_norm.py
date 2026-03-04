@@ -245,9 +245,13 @@ class DynamicErf(nn.Module):
         self.shift = nn.Parameter(torch.ones(1, dtype=dtype, device=init_device) * shift_init_value)
 
         if elementwise_affine:
-            self.weight = nn.Parameter(torch.ones(self.normalized_shape, dtype=dtype, device=init_device))
+            self.weight = nn.Parameter(
+                torch.ones(self.normalized_shape, dtype=dtype, device=init_device)
+            )
             if bias:
-                self.bias = nn.Parameter(torch.zeros(self.normalized_shape, dtype=dtype, device=init_device))
+                self.bias = nn.Parameter(
+                    torch.zeros(self.normalized_shape, dtype=dtype, device=init_device)
+                )
             else:
                 self.register_parameter("bias", None)
         else:
@@ -310,9 +314,13 @@ class DynamicTanh(nn.Module):
         self.shift = nn.Parameter(torch.ones(1, dtype=dtype, device=init_device) * shift_init_value)
 
         if elementwise_affine:
-            self.weight = nn.Parameter(torch.ones(self.normalized_shape, dtype=dtype, device=init_device))
+            self.weight = nn.Parameter(
+                torch.ones(self.normalized_shape, dtype=dtype, device=init_device)
+            )
             if bias:
-                self.bias = nn.Parameter(torch.zeros(self.normalized_shape, dtype=dtype, device=init_device))
+                self.bias = nn.Parameter(
+                    torch.zeros(self.normalized_shape, dtype=dtype, device=init_device)
+                )
             else:
                 self.register_parameter("bias", None)
         else:

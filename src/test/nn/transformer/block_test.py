@@ -13,6 +13,7 @@ from olmo_core.nn.attention import AttentionConfig, AttentionType
 from olmo_core.nn.feed_forward import FeedForwardConfig
 from olmo_core.nn.layer_norm import LayerNormConfig
 from olmo_core.nn.transformer.block import (
+    HybridNormTransformerBlock,
     PeriNormTransformerBlock,
     ReorderedNormTransformerBlock,
     TransformerBlock,
@@ -116,3 +117,97 @@ def test_tensor_parallel_transformer_block(
         start_method="spawn",
         func_args=(checkpoint_dir, inputs_path, outputs_path, block_cls, d_model, attn_kwargs),
     )
+
+
+def test_hybrid_norm_transformer_block_structure():
+    """Verify HybridNormTransformerBlock has a post-attention norm but no feed-forward norm."""
+    d_model = 64
+    attn_kwargs = {"name": AttentionType.default, "n_heads": 4, "use_flash": False}
+    block = _build_block(
+        HybridNormTransformerBlock, d_model=d_model, init_device="cpu", attn_kwargs=attn_kwargs
+    )
+
+    # Key modules must be present.
+    assert hasattr(block, "attention"), "Block should have attention"
+    assert hasattr(block, "feed_forward"), "Block should have feed_forward"
+    assert hasattr(block, "attention_norm"), "Block should have attention_norm (post-attn)"
+    assert hasattr(
+        block, "attention_residual_stream"
+    ), "Block should have attention_residual_stream"
+    assert hasattr(
+        block, "feed_forward_residual_stream"
+    ), "Block should have feed_forward_residual_stream"
+    # Feed-forward norm must NOT be present.
+    assert not hasattr(block, "feed_forward_norm"), "Block should NOT have feed_forward_norm"
+
+
+def test_hybrid_norm_transformer_block_forward():
+    """HybridNormTransformerBlock forward pass should run without errors."""
+    d_model = 64
+    attn_kwargs = {"name": AttentionType.default, "n_heads": 4, "use_flash": False}
+    block = _build_block(
+        HybridNormTransformerBlock, d_model=d_model, init_device="cpu", attn_kwargs=attn_kwargs
+    )
+
+    bs, seq_len = 2, 16
+    x = torch.randn(bs, seq_len, d_model)
+    y = block(x)
+    assert y.shape == x.shape
+
+
+def test_hybrid_norm_transformer_block_via_config():
+    """Selecting TransformerBlockType.hybrid_norm via config dispatch builds the correct block."""
+    from olmo_core.nn.transformer.config import (
+        TransformerBlockConfig,
+        TransformerBlockType,
+    )
+
+    d_model = 64
+    attn_cfg = AttentionConfig(name=AttentionType.default, n_heads=4, use_flash=False)
+    ff_cfg = FeedForwardConfig(hidden_size=4 * d_model)
+    ln_cfg = LayerNormConfig()
+
+    block_cfg = TransformerBlockConfig(
+        sequence_mixer=attn_cfg,
+        feed_forward=ff_cfg,
+        layer_norm=ln_cfg,
+        name=TransformerBlockType.hybrid_norm,
+    )
+    block = block_cfg.build(d_model=d_model, block_idx=0, n_layers=1)
+
+    assert isinstance(block, HybridNormTransformerBlock)
+    assert not hasattr(block, "feed_forward_norm")
+
+    bs, seq_len = 2, 16
+    x = torch.randn(bs, seq_len, d_model)
+    y = block(x)
+    assert y.shape == x.shape
+
+
+def test_hybrid_norm_num_params():
+    """HybridNormTransformerBlock should count one fewer norm than the default block."""
+    from olmo_core.nn.transformer.config import (
+        TransformerBlockConfig,
+        TransformerBlockType,
+    )
+
+    d_model = 64
+    attn_cfg = AttentionConfig(name=AttentionType.default, n_heads=4, use_flash=False)
+    ff_cfg = FeedForwardConfig(hidden_size=4 * d_model)
+    ln_cfg = LayerNormConfig()
+
+    default_cfg = TransformerBlockConfig(
+        sequence_mixer=attn_cfg,
+        feed_forward=ff_cfg,
+        layer_norm=ln_cfg,
+        name=TransformerBlockType.default,
+    )
+    hybrid_cfg = TransformerBlockConfig(
+        sequence_mixer=attn_cfg,
+        feed_forward=ff_cfg,
+        layer_norm=ln_cfg,
+        name=TransformerBlockType.hybrid_norm,
+    )
+
+    norm_params = ln_cfg.num_params(d_model)
+    assert hybrid_cfg.num_params(d_model) == default_cfg.num_params(d_model) - norm_params

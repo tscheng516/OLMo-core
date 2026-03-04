@@ -115,6 +115,11 @@ class TransformerBlockType(StrEnum):
     ➡️ :class:`ReorderedNormTransformerBlock`
     """
 
+    hybrid_norm = "hybrid_norm"
+    """
+    ➡️ :class:`HybridNormTransformerBlock`
+    """
+
     peri_norm = "peri_norm"
     """
     ➡️ :class:`PeriNormTransformerBlock`
@@ -228,9 +233,7 @@ class TransformerBlockConfig(ModuleConfig):
         cache: Optional[BufferCache] = None,
     ) -> "TransformerBlockBase":
         from .block import (
-            GatedTransformerBlock,
-            GatedReorderedNormTransformerBlock,
-            GatedPeriNormTransformerBlock,
+            HybridNormTransformerBlock,
             LayerNormScaledTransformerBlock,
             MoEHybridReorderedNormTransformerBlock,
             MoEHybridTransformerBlock,
@@ -259,15 +262,23 @@ class TransformerBlockConfig(ModuleConfig):
                 return LayerNormScaledTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.reordered_norm:
                 return ReorderedNormTransformerBlock(**kwargs)
+            elif self.name == TransformerBlockType.hybrid_norm:
+                return HybridNormTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.peri_norm:
                 return PeriNormTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.normalized:
                 return NormalizedTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.gated:
+                from .block import GatedTransformerBlock
+
                 return GatedTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.gated_reordered:
+                from .block import GatedReorderedNormTransformerBlock
+
                 return GatedReorderedNormTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.gated_peri:
+                from .block import GatedPeriNormTransformerBlock
+
                 return GatedPeriNormTransformerBlock(**kwargs)
             elif self.name == TransformerBlockType.moe:
                 return MoETransformerBlock(**kwargs)
@@ -299,7 +310,7 @@ class TransformerBlockConfig(ModuleConfig):
         # Block feed forward (dense and/or sparse).
         if self.feed_forward is not None:
             block_params += self.feed_forward.num_params(d_model)
-            if self.layer_norm is not None:
+            if self.layer_norm is not None and self.name != TransformerBlockType.hybrid_norm:
                 block_params += self.layer_norm.num_params(d_model)
         if self.feed_forward_moe is not None:
             block_params += self.feed_forward_moe.num_params(d_model)
@@ -540,7 +551,7 @@ class TransformerConfig(ModelConfig):
             layer_norm_eps=1e-6,
             **kwargs,
         )
-    
+
     @classmethod
     def olmo2_all_derf_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
@@ -551,7 +562,12 @@ class TransformerConfig(ModelConfig):
         config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
 
         # Create a LayerNormConfig that points to the DERF implementation
-        derf_ln = LayerNormConfig(name=LayerNormType.derf, eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None, bias=False, dtype=config.dtype)
+        derf_ln = LayerNormConfig(
+            name=LayerNormType.derf,
+            eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None,
+            bias=False,
+            dtype=config.dtype,
+        )
 
         # Replace global embedding norm
         config.embedding_norm = derf_ln
@@ -561,7 +577,9 @@ class TransformerConfig(ModelConfig):
             config.block.layer_norm = derf_ln
             if hasattr(config.block, "sequence_mixer") and config.block.sequence_mixer is not None:
                 config.block.sequence_mixer.qk_norm = derf_ln
-                config.block.sequence_mixer.use_head_qk_norm = config.block.sequence_mixer.use_head_qk_norm
+                config.block.sequence_mixer.use_head_qk_norm = (
+                    config.block.sequence_mixer.use_head_qk_norm
+                )
 
         # Replace LM head norm if present
         if getattr(config, "lm_head", None) is not None:
@@ -582,7 +600,12 @@ class TransformerConfig(ModelConfig):
         config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
 
         # Create a LayerNormConfig that points to the DERF implementation
-        derf_ln = LayerNormConfig(name=LayerNormType.derf, eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None, bias=False, dtype=config.dtype)
+        derf_ln = LayerNormConfig(
+            name=LayerNormType.derf,
+            eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None,
+            bias=False,
+            dtype=config.dtype,
+        )
 
         # Replace global embedding norm
         config.embedding_norm = derf_ln
@@ -671,7 +694,12 @@ class TransformerConfig(ModelConfig):
         config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
 
         # Create a LayerNormConfig that points to the DynamicTanh implementation
-        dyt_ln = LayerNormConfig(name=LayerNormType.dyt, eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None, bias=False, dtype=config.dtype)
+        dyt_ln = LayerNormConfig(
+            name=LayerNormType.dyt,
+            eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None,
+            bias=False,
+            dtype=config.dtype,
+        )
 
         # Replace global embedding norm
         config.embedding_norm = dyt_ln
@@ -681,7 +709,9 @@ class TransformerConfig(ModelConfig):
             config.block.layer_norm = dyt_ln
             if hasattr(config.block, "sequence_mixer") and config.block.sequence_mixer is not None:
                 config.block.sequence_mixer.qk_norm = dyt_ln
-                config.block.sequence_mixer.use_head_qk_norm = config.block.sequence_mixer.use_head_qk_norm
+                config.block.sequence_mixer.use_head_qk_norm = (
+                    config.block.sequence_mixer.use_head_qk_norm
+                )
 
         # Replace LM head norm if present
         if getattr(config, "lm_head", None) is not None:
@@ -702,7 +732,12 @@ class TransformerConfig(ModelConfig):
         config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
 
         # Create a LayerNormConfig that points to the DynamicTanh implementation
-        dyt_ln = LayerNormConfig(name=LayerNormType.dyt, eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None, bias=False, dtype=config.dtype)
+        dyt_ln = LayerNormConfig(
+            name=LayerNormType.dyt,
+            eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None,
+            bias=False,
+            dtype=config.dtype,
+        )
 
         # Replace global embedding norm
         config.embedding_norm = dyt_ln

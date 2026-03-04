@@ -258,7 +258,7 @@ class FeedForwardQuadratic(FeedForward):
         """
         v = self.w3(x)
         return self.w2(self.activation_fn(self.w1(x)) * v * v)
-    
+
     def apply_tp(
         self,
         tp_mesh: DeviceMesh,
