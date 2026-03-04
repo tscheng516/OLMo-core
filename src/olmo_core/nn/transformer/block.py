@@ -229,60 +229,6 @@ class TransformerBlock(TransformerBlockBase):
         return attn_flops + ff_flops
 
 
-class GatedTransformerBlock(TransformerBlock):
-    """
-    Transformer block variant that gates the attention output with a sigmoid gate
-    computed from the attention-normalized input (`x_norm`).
-    """
-
-    def __init__(
-        self,
-        *,
-        d_model: int,
-        block_idx: int,
-        n_layers: int,
-        sequence_mixer: SequenceMixerConfig,
-        feed_forward: FeedForwardConfig,
-        layer_norm: LayerNormConfig,
-        dropout: float = 0.0,
-        attention_residual_alpha: float = 1.0,
-        feed_forward_residual_alpha: float = 1.0,
-        init_device: str = "cpu",
-        cache: Optional[BufferCache] = None,
-    ):
-        super().__init__(
-            d_model=d_model,
-            block_idx=block_idx,
-            n_layers=n_layers,
-            sequence_mixer=sequence_mixer,
-            feed_forward=feed_forward,
-            layer_norm=layer_norm,
-            dropout=dropout,
-            attention_residual_alpha=attention_residual_alpha,
-            feed_forward_residual_alpha=feed_forward_residual_alpha,
-            init_device=init_device,
-            cache=cache,
-        )
-        # Gate that produces values in (0,1) after sigmoid; per-feature gating.
-        self.attn_gate = nn.Linear(d_model, d_model)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        *,
-        loss_div_factor: Optional[Union[torch.Tensor, float]] = None,
-        **kwargs,
-    ) -> torch.Tensor:
-        del loss_div_factor
-        # compute attention on normalized input
-        x_norm = self.attention_norm(x)
-        attn_out = self.attention(x_norm, **kwargs)
-        # gating computed from the attention-normalized input as requested
-        gate = torch.sigmoid(self.attn_gate(x_norm))
-        gated_attn = gate * attn_out
-        h = self.attention_residual_stream(x, gated_attn)
-        return self.feed_forward_residual_stream(h, self.feed_forward(self.feed_forward_norm(h)))
-
 class LayerNormScaledTransformerBlock(TransformerBlock):
     """
     A variant of ``TransformerBlock`` that applies
@@ -363,28 +309,6 @@ class ReorderedNormTransformerBlock(TransformerBlock):
         return self.feed_forward_residual_stream(h, self.feed_forward_norm(self.feed_forward(h)))
 
 
-class GatedReorderedNormTransformerBlock(GatedTransformerBlock):
-    """
-    Gated variant of :class:`ReorderedNormTransformerBlock`.
-
-    Gating is computed as `sigmoid(attn_gate(x))` (un-normalized input) and applied elementwise
-    to the attention output before applying the attention norm.
-    """
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        *,
-        loss_div_factor: Optional[Union[torch.Tensor, float]] = None,
-        **kwargs,
-    ) -> torch.Tensor:
-        del loss_div_factor
-        gate = torch.sigmoid(self.attn_gate(x))
-        attn_out = self.attention(x, **kwargs)
-        h = self.attention_residual_stream(x, self.attention_norm(gate * attn_out))
-        return self.feed_forward_residual_stream(h, self.feed_forward_norm(self.feed_forward(h)))
-
-
 class PeriNormTransformerBlock(TransformerBlock):
     """
     A transformer block in the style of `Peri-LN <https://arxiv.org/pdf/2502.02732>`_.
@@ -436,73 +360,6 @@ class PeriNormTransformerBlock(TransformerBlock):
             h, self.post_feed_forward_norm(self.feed_forward(self.feed_forward_norm(h)))
         )
 
-
-class GatedPeriNormTransformerBlock(GatedTransformerBlock):
-    """
-    Gated variant of :class:`PeriNormTransformerBlock`.
-
-    Gating is computed as `sigmoid(x_norm)` and applied to the attention output
-    before passing through the post-attention norm.
-    """
-
-    def __init__(
-        self,
-        *,
-        d_model: int,
-        block_idx: int,
-        n_layers: int,
-        sequence_mixer: SequenceMixerConfig,
-        feed_forward: FeedForwardConfig,
-        layer_norm: LayerNormConfig,
-        dropout: float = 0.0,
-        attention_residual_alpha: float = 1.0,
-        feed_forward_residual_alpha: float = 1.0,
-        init_device: str = "cpu",
-        cache: Optional[BufferCache] = None,
-    ):
-        super().__init__(
-            d_model=d_model,
-            block_idx=block_idx,
-            n_layers=n_layers,
-            sequence_mixer=sequence_mixer,
-            feed_forward=feed_forward,
-            layer_norm=layer_norm,
-            dropout=dropout,
-            attention_residual_alpha=attention_residual_alpha,
-            feed_forward_residual_alpha=feed_forward_residual_alpha,
-            init_device=init_device,
-            cache=cache,
-        )
-        # PeriNorm adds post norms; build them here as in parent
-        self.post_attention_norm = layer_norm.build(d_model, init_device=init_device)
-        self.post_feed_forward_norm = layer_norm.build(d_model, init_device=init_device)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        *,
-        loss_div_factor: Optional[Union[torch.Tensor, float]] = None,
-        **kwargs,
-    ) -> torch.Tensor:
-        del loss_div_factor
-        x_norm = self.attention_norm(x)
-        gate = torch.sigmoid(self.attn_gate(x_norm))
-        attn_out = self.attention(x_norm, **kwargs)
-        h = self.attention_residual_stream(x, self.post_attention_norm(gate * attn_out))
-        return self.feed_forward_residual_stream(
-            h, self.post_feed_forward_norm(self.feed_forward(self.feed_forward_norm(h)))
-        )
-
-    def apply_tp(
-        self, tp_mesh: DeviceMesh, *, input_layout: Placement, float8_enabled: bool = False
-    ):
-        super().apply_tp(tp_mesh, input_layout=input_layout, float8_enabled=float8_enabled)
-        parallelize_module(
-            self.post_feed_forward_norm, device_mesh=tp_mesh, parallelize_plan=SequenceParallel()
-        )
-        parallelize_module(
-            self.post_attention_norm, device_mesh=tp_mesh, parallelize_plan=SequenceParallel()
-        )
 
 
 @beta_feature
