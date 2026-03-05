@@ -120,7 +120,7 @@ def test_tensor_parallel_transformer_block(
 
 
 def test_hybrid_norm_transformer_block_structure():
-    """Verify HybridNormTransformerBlock has post-attention norm, qk_norm, v_norm, no FFN norm."""
+    """Verify HybridNormTransformerBlock has post-FFN norm, qk_norm, v_norm, no attention norm."""
     d_model = 64
     attn_kwargs = {"name": AttentionType.default, "n_heads": 4, "use_flash": False}
     block = _build_block(
@@ -130,15 +130,15 @@ def test_hybrid_norm_transformer_block_structure():
     # Key modules must be present.
     assert hasattr(block, "attention"), "Block should have attention"
     assert hasattr(block, "feed_forward"), "Block should have feed_forward"
-    assert hasattr(block, "attention_norm"), "Block should have attention_norm (post-attn)"
+    assert hasattr(block, "feed_forward_norm"), "Block should have feed_forward_norm (post-FFN)"
     assert hasattr(
         block, "attention_residual_stream"
     ), "Block should have attention_residual_stream"
     assert hasattr(
         block, "feed_forward_residual_stream"
     ), "Block should have feed_forward_residual_stream"
-    # Feed-forward norm must NOT be present.
-    assert not hasattr(block, "feed_forward_norm"), "Block should NOT have feed_forward_norm"
+    # Attention norm must NOT be present.
+    assert not hasattr(block, "attention_norm"), "Block should NOT have attention_norm"
     # qk_norm and v_norm must be set on the attention module.
     assert block.attention.q_norm is not None, "Attention should have q_norm"
     assert block.attention.k_norm is not None, "Attention should have k_norm"
@@ -157,6 +157,28 @@ def test_hybrid_norm_transformer_block_forward():
     x = torch.randn(bs, seq_len, d_model)
     y = block(x)
     assert y.shape == x.shape
+
+
+def test_hybrid_norm_ffn_post_norm_ordering():
+    """Verify the FFN post-norm is applied AFTER the residual add: norm(h + FFN(h))."""
+    d_model = 64
+    attn_kwargs = {"name": AttentionType.default, "n_heads": 4, "use_flash": False}
+    block = _build_block(
+        HybridNormTransformerBlock, d_model=d_model, init_device="cpu", attn_kwargs=attn_kwargs
+    )
+    block.eval()
+
+    torch.manual_seed(0)
+    x = torch.randn(1, 4, d_model)
+
+    with torch.no_grad():
+        # Step 1: attention with internal QK/V-norms but no block-level pre/post norm.
+        h = block.attention_residual_stream(x, block.attention(x))
+        # Step 2: correct ordering – norm applied AFTER the residual add.
+        expected = block.feed_forward_norm(block.feed_forward_residual_stream(h, block.feed_forward(h)))
+        actual = block(x)
+
+    torch.testing.assert_close(actual, expected)
 
 
 def test_hybrid_norm_transformer_block_via_config():
@@ -180,7 +202,8 @@ def test_hybrid_norm_transformer_block_via_config():
     block = block_cfg.build(d_model=d_model, block_idx=0, n_layers=1)
 
     assert isinstance(block, HybridNormTransformerBlock)
-    assert not hasattr(block, "feed_forward_norm")
+    assert not hasattr(block, "attention_norm")
+    assert hasattr(block, "feed_forward_norm")
     assert block.attention.q_norm is not None
     assert block.attention.k_norm is not None
     assert block.attention.v_norm is not None
