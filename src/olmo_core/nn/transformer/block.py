@@ -309,6 +309,118 @@ class ReorderedNormTransformerBlock(TransformerBlock):
         return self.feed_forward_residual_stream(h, self.feed_forward_norm(self.feed_forward(h)))
 
 
+class HybridNormTransformerBlock(TransformerBlock):
+    """
+    A transformer block implementing HybridNorm: QK-norm and V-norm are applied inside the
+    attention sub-layer, and a post-attention LayerNorm is applied to the attention output
+    before adding to the residual stream. No LayerNorm is applied before or after the
+    feed-forward sub-layer.
+
+    If the ``sequence_mixer`` config does not already have ``qk_norm`` or ``v_norm`` set,
+    this block automatically enables them using the block's ``layer_norm`` config.
+    """
+
+    def __init__(
+        self,
+        *,
+        d_model: int,
+        block_idx: int,
+        n_layers: int,
+        sequence_mixer: SequenceMixerConfig,
+        feed_forward: FeedForwardConfig,
+        layer_norm: LayerNormConfig,
+        dropout: float = 0.0,
+        attention_residual_alpha: float = 1.0,
+        feed_forward_residual_alpha: float = 1.0,
+        init_device: str = "cpu",
+        cache: Optional[BufferCache] = None,
+    ):
+        from copy import copy
+
+        from ..attention import AttentionConfig
+
+        # Ensure qk_norm and v_norm are set on the attention config.
+        if isinstance(sequence_mixer, AttentionConfig):
+            sequence_mixer = copy(sequence_mixer)
+            if sequence_mixer.qk_norm is None:
+                sequence_mixer.qk_norm = layer_norm
+            if sequence_mixer.v_norm is None:
+                sequence_mixer.v_norm = layer_norm
+
+        super().__init__(
+            d_model=d_model,
+            block_idx=block_idx,
+            n_layers=n_layers,
+            sequence_mixer=sequence_mixer,
+            feed_forward=feed_forward,
+            layer_norm=layer_norm,
+            dropout=dropout,
+            attention_residual_alpha=attention_residual_alpha,
+            feed_forward_residual_alpha=feed_forward_residual_alpha,
+            init_device=init_device,
+            cache=cache,
+        )
+        # Remove the feed-forward norm – HybridNorm applies no norm around the FFN sub-layer.
+        del self.feed_forward_norm
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        *,
+        loss_div_factor: Optional[Union[torch.Tensor, float]] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        del loss_div_factor
+        # Post-attention norm: norm is applied to attention output before residual add.
+        h = self.attention_residual_stream(x, self.attention_norm(self.attention(x, **kwargs)))
+        # No norm before or after feed-forward.
+        return self.feed_forward_residual_stream(h, self.feed_forward(h))
+
+    def apply_tp(
+        self, tp_mesh: DeviceMesh, *, input_layout: Placement, float8_enabled: bool = False
+    ):
+        parallelize_module(
+            self,
+            device_mesh=tp_mesh,
+            parallelize_plan=PrepareModuleInput(
+                input_layouts=(input_layout,),
+                desired_input_layouts=(Shard(1),),
+            ),
+        )
+
+        parallelize_module(
+            self.attention_norm, device_mesh=tp_mesh, parallelize_plan=SequenceParallel()
+        )
+        parallelize_module(
+            self.attention_residual_stream.dropout,
+            device_mesh=tp_mesh,
+            parallelize_plan=SequenceParallel(),
+        )
+
+        self.attention.apply_tp(
+            tp_mesh,
+            input_layout=Shard(1),
+            output_layout=Shard(1),
+            use_local_output=False,
+            float8_enabled=float8_enabled,
+        )
+
+        # No feed_forward_norm to parallelize.
+        parallelize_module(
+            self.feed_forward_residual_stream.dropout,
+            device_mesh=tp_mesh,
+            parallelize_plan=SequenceParallel(),
+        )
+
+        self.feed_forward.apply_tp(
+            tp_mesh,
+            input_layout=Shard(1),
+            output_layout=Shard(1),
+            use_local_output=False,
+            float8_enabled=float8_enabled,
+        )
+
+
 class PeriNormTransformerBlock(TransformerBlock):
     """
     A transformer block in the style of `Peri-LN <https://arxiv.org/pdf/2502.02732>`_.
@@ -359,7 +471,6 @@ class PeriNormTransformerBlock(TransformerBlock):
         return self.feed_forward_residual_stream(
             h, self.post_feed_forward_norm(self.feed_forward(self.feed_forward_norm(h)))
         )
-
 
 
 @beta_feature
