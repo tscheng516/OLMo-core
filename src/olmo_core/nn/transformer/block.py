@@ -311,10 +311,19 @@ class ReorderedNormTransformerBlock(TransformerBlock):
 
 class HybridNormTransformerBlock(TransformerBlock):
     """
-    A transformer block implementing HybridNorm: QK-norm and V-norm are applied inside the
-    attention sub-layer (no pre-norm before attention), and a post-FFN LayerNorm is applied
-    to the feed-forward output before adding to the residual stream. No LayerNorm is applied
-    before or after the attention sub-layer.
+    A transformer block implementing HybridNorm.
+
+    The computation is:
+
+    .. math::
+
+        h = x + \\text{Attention}(x)
+
+        x_{out} = \\text{norm}(h + \\text{FFN}(h))
+
+    QK-norm and V-norm are applied inside the attention sub-layer. No LayerNorm is applied
+    before or after attention. The single block-level LayerNorm acts as a post-FFN norm applied
+    *after* the FFN residual addition.
 
     If the ``sequence_mixer`` config does not already have ``qk_norm`` or ``v_norm`` set,
     this block automatically enables them using the block's ``layer_norm`` config.
@@ -373,8 +382,8 @@ class HybridNormTransformerBlock(TransformerBlock):
         del loss_div_factor
         # No norm before or after attention.
         h = self.attention_residual_stream(x, self.attention(x, **kwargs))
-        # Post-FFN norm: norm is applied to feed-forward output before residual add.
-        return self.feed_forward_residual_stream(h, self.feed_forward_norm(self.feed_forward(h)))
+        # Post-FFN norm applied after the residual add: norm(h + FFN(h)).
+        return self.feed_forward_norm(self.feed_forward_residual_stream(h, self.feed_forward(h)))
 
     def apply_tp(
         self, tp_mesh: DeviceMesh, *, input_layout: Placement, float8_enabled: bool = False
@@ -403,21 +412,23 @@ class HybridNormTransformerBlock(TransformerBlock):
             float8_enabled=float8_enabled,
         )
 
-        parallelize_module(
-            self.feed_forward_norm, device_mesh=tp_mesh, parallelize_plan=SequenceParallel()
-        )
-        parallelize_module(
-            self.feed_forward_residual_stream.dropout,
-            device_mesh=tp_mesh,
-            parallelize_plan=SequenceParallel(),
-        )
-
         self.feed_forward.apply_tp(
             tp_mesh,
             input_layout=Shard(1),
             output_layout=Shard(1),
             use_local_output=False,
             float8_enabled=float8_enabled,
+        )
+
+        parallelize_module(
+            self.feed_forward_residual_stream.dropout,
+            device_mesh=tp_mesh,
+            parallelize_plan=SequenceParallel(),
+        )
+
+        # feed_forward_norm is applied after the FFN residual add: norm(h + FFN(h)).
+        parallelize_module(
+            self.feed_forward_norm, device_mesh=tp_mesh, parallelize_plan=SequenceParallel()
         )
 
 

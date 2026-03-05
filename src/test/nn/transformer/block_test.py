@@ -159,6 +159,28 @@ def test_hybrid_norm_transformer_block_forward():
     assert y.shape == x.shape
 
 
+def test_hybrid_norm_ffn_post_norm_ordering():
+    """Verify the FFN post-norm is applied AFTER the residual add: norm(h + FFN(h))."""
+    d_model = 64
+    attn_kwargs = {"name": AttentionType.default, "n_heads": 4, "use_flash": False}
+    block = _build_block(
+        HybridNormTransformerBlock, d_model=d_model, init_device="cpu", attn_kwargs=attn_kwargs
+    )
+    block.eval()
+
+    torch.manual_seed(0)
+    x = torch.randn(1, 4, d_model)
+
+    with torch.no_grad():
+        # Step 1: attention with internal QK/V-norms but no block-level pre/post norm.
+        h = block.attention_residual_stream(x, block.attention(x))
+        # Step 2: correct ordering – norm applied AFTER the residual add.
+        expected = block.feed_forward_norm(block.feed_forward_residual_stream(h, block.feed_forward(h)))
+        actual = block(x)
+
+    torch.testing.assert_close(actual, expected)
+
+
 def test_hybrid_norm_transformer_block_via_config():
     """Selecting TransformerBlockType.hybrid_norm via config dispatch builds the correct block."""
     from olmo_core.nn.transformer.config import (
