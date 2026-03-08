@@ -631,7 +631,7 @@ class TransformerConfig(ModelConfig):
         )
 
     @classmethod
-    def olmo2_100M_hybrid_1(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+    def olmo2_hybrid1_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
         Variant of olmo2_100M using hybrid_norm as the default block and
         overriding layer 0 to reordered_norm.
