@@ -568,6 +568,94 @@ class TransformerConfig(ModelConfig):
             **kwargs,
         )
 
+
+    @classmethod
+    def olmo2_14M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        return cls.llama_like(
+            d_model=128,
+            n_layers=kwargs.pop("n_layers", 4),
+            n_heads=kwargs.pop("n_heads", 8),
+            vocab_size=vocab_size,
+            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
+            qk_norm=kwargs.pop("qk_norm", True),
+            rope_theta=kwargs.pop("rope_theta", 500_000),
+            layer_norm_eps=1e-6,
+            **kwargs,
+        )
+
+    @classmethod
+    def olmo2_30M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        return cls.llama_like(
+            d_model=256,
+            n_layers=kwargs.pop("n_layers", 4),
+            n_heads=kwargs.pop("n_heads", 8),
+            vocab_size=vocab_size,
+            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
+            qk_norm=kwargs.pop("qk_norm", True),
+            rope_theta=kwargs.pop("rope_theta", 500_000),
+            layer_norm_eps=1e-6,
+            **kwargs,
+        )
+
+    @classmethod
+    def olmo2_60M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        return cls.llama_like(
+            d_model=384,
+            hidden_size_multiplier=1.5,
+            n_layers=kwargs.pop("n_layers", 8),
+            n_heads=kwargs.pop("n_heads", 8),
+            vocab_size=vocab_size,
+            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
+            qk_norm=kwargs.pop("qk_norm", True),
+            rope_theta=kwargs.pop("rope_theta", 500_000),
+            layer_norm_eps=1e-6,
+            **kwargs,
+        )
+
+    @classmethod
+    def olmo2_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        """
+        A 100M OLMo2 model config.
+        """
+        return cls.llama_like(
+            d_model=512,
+            hidden_size_multiplier=1.5,
+            n_layers=kwargs.pop("n_layers", 12),
+            n_heads=kwargs.pop("n_heads", 8),
+            vocab_size=vocab_size,
+            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
+            qk_norm=kwargs.pop("qk_norm", True),
+            rope_theta=kwargs.pop("rope_theta", 500_000),
+            layer_norm_eps=1e-6,
+            **kwargs,
+        )
+
+    @classmethod
+    def olmo2_100M_hybrid_1(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
+        """
+        Variant of olmo2_100M using hybrid_norm as the default block and
+        overriding layer 0 to reordered_norm.
+        """
+        # Build the standard 100M config first
+        config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
+
+        # Ensure we have a single block config (not named blocks)
+        if isinstance(config.block, dict):
+            raise OLMoConfigurationError("This factory requires `block` to be a single TransformerBlockConfig")
+
+        # Set base block to hybrid_norm
+        config.block.name = TransformerBlockType.hybrid_norm
+
+        # Create an override for the first layer
+        override = config.block.copy()
+        override.name = TransformerBlockType.reordered_norm
+
+        # Optionally tweak the sequence_mixer / feed_forward on `override` here if needed.
+        config.block_overrides = {0: override}
+
+        return config
+
+
     @classmethod
     def olmo2_all_derf_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
@@ -639,66 +727,6 @@ class TransformerConfig(ModelConfig):
 
         return config
 
-    @classmethod
-    def olmo2_14M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
-        return cls.llama_like(
-            d_model=128,
-            n_layers=kwargs.pop("n_layers", 4),
-            n_heads=kwargs.pop("n_heads", 8),
-            vocab_size=vocab_size,
-            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
-            qk_norm=kwargs.pop("qk_norm", True),
-            rope_theta=kwargs.pop("rope_theta", 500_000),
-            layer_norm_eps=1e-6,
-            **kwargs,
-        )
-
-    @classmethod
-    def olmo2_30M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
-        return cls.llama_like(
-            d_model=256,
-            n_layers=kwargs.pop("n_layers", 4),
-            n_heads=kwargs.pop("n_heads", 8),
-            vocab_size=vocab_size,
-            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
-            qk_norm=kwargs.pop("qk_norm", True),
-            rope_theta=kwargs.pop("rope_theta", 500_000),
-            layer_norm_eps=1e-6,
-            **kwargs,
-        )
-
-    @classmethod
-    def olmo2_60M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
-        return cls.llama_like(
-            d_model=384,
-            hidden_size_multiplier=1.5,
-            n_layers=kwargs.pop("n_layers", 8),
-            n_heads=kwargs.pop("n_heads", 8),
-            vocab_size=vocab_size,
-            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
-            qk_norm=kwargs.pop("qk_norm", True),
-            rope_theta=kwargs.pop("rope_theta", 500_000),
-            layer_norm_eps=1e-6,
-            **kwargs,
-        )
-
-    @classmethod
-    def olmo2_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
-        """
-        A 100M OLMo2 model config.
-        """
-        return cls.llama_like(
-            d_model=512,
-            hidden_size_multiplier=1.5,
-            n_layers=kwargs.pop("n_layers", 12),
-            n_heads=kwargs.pop("n_heads", 8),
-            vocab_size=vocab_size,
-            block_name=kwargs.pop("block_name", TransformerBlockType.reordered_norm),
-            qk_norm=kwargs.pop("qk_norm", True),
-            rope_theta=kwargs.pop("rope_theta", 500_000),
-            layer_norm_eps=1e-6,
-            **kwargs,
-        )
 
     @classmethod
     def olmo2_all_dyt_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
