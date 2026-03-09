@@ -850,13 +850,12 @@ class TransformerConfig(ModelConfig):
 
         base_eps = config.block.layer_norm.eps if config.block and config.block.layer_norm else None
 
-        # Replace global embedding norm with alpha_init_value=0.3
         config.embedding_norm = LayerNormConfig(
             name=LayerNormType.dyt,
             eps=base_eps,
             bias=False,
             dtype=config.dtype,
-            alpha_init_value=0.2,
+            alpha_init_value=0.05,
         )
 
         # Replace block-level layer norm with separate configs for attention and feed_forward
@@ -866,17 +865,16 @@ class TransformerConfig(ModelConfig):
                 eps=base_eps,
                 bias=False,
                 dtype=config.dtype,
-                alpha_init_value=0.8,
+                alpha_init_value=0.2,
             )
             config.block.feed_forward_norm = LayerNormConfig(
                 name=LayerNormType.dyt,
                 eps=base_eps,
                 bias=False,
                 dtype=config.dtype,
-                alpha_init_value=0.2,
+                alpha_init_value=0.05,
             )
 
-        # Replace LM head norm with alpha_init_value=0.4
         if getattr(config, "lm_head", None) is not None:
             try:
                 config.lm_head.layer_norm = LayerNormConfig(
@@ -884,7 +882,7 @@ class TransformerConfig(ModelConfig):
                     eps=base_eps,
                     bias=False,
                     dtype=config.dtype,
-                    alpha_init_value=0.2,
+                    alpha_init_value=0.05,
                 )
             except Exception:
                 pass
