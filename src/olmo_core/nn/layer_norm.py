@@ -75,6 +75,14 @@ class LayerNormConfig(ModuleConfig):
     bias: Optional[bool] = None
     full_precision: Optional[bool] = None
     dtype: Optional[DType] = None
+    alpha_init_value: Optional[float] = None
+    """
+    Initial value for the alpha parameter (used by DynamicErf and DynamicTanh).
+    """
+    shift_init_value: Optional[float] = None
+    """
+    Initial value for the shift parameter (used by DynamicErf and DynamicTanh).
+    """
 
     def num_params(self, size: int) -> int:
         """
