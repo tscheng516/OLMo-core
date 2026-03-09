@@ -660,35 +660,62 @@ class TransformerConfig(ModelConfig):
     def olmo2_all_derf_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
         A 100M OLMo2 model config where all LayerNorm usages and attention Q/K norms
-        are replaced with DERF modules.
+        are replaced with DERF modules with different alpha_init_value
+        for embedding_norm (0.8), attention_norm (0.2), feed_forward_norm (0.8),
+        qk_norm (0.2), and lm_head.layer_norm (0.8).
         """
         # Build the standard 100M config first
         config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
 
-        # Create a LayerNormConfig that points to the DERF implementation
-        derf_ln = LayerNormConfig(
+        base_eps = config.block.layer_norm.eps if config.block and config.block.layer_norm else None
+
+        # Replace global embedding norm with alpha_init_value=0.8
+        config.embedding_norm = LayerNormConfig(
             name=LayerNormType.derf,
-            eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None,
+            eps=base_eps,
             bias=False,
             dtype=config.dtype,
+            alpha_init_value=0.8,
         )
 
-        # Replace global embedding norm
-        config.embedding_norm = derf_ln
-
-        # Replace block-level layer norm and attention qk_norm
+        # Replace block-level layer norm with separate configs for attention and feed_forward
         if isinstance(config.block, TransformerBlockConfig):
-            config.block.layer_norm = derf_ln
+            config.block.attention_norm = LayerNormConfig(
+                name=LayerNormType.derf,
+                eps=base_eps,
+                bias=False,
+                dtype=config.dtype,
+                alpha_init_value=0.2,
+            )
+            config.block.feed_forward_norm = LayerNormConfig(
+                name=LayerNormType.derf,
+                eps=base_eps,
+                bias=False,
+                dtype=config.dtype,
+                alpha_init_value=0.8,
+            )
+            # Update attention qk_norm with alpha_init_value=0.2
             if hasattr(config.block, "sequence_mixer") and config.block.sequence_mixer is not None:
-                config.block.sequence_mixer.qk_norm = derf_ln
-                config.block.sequence_mixer.use_head_qk_norm = (
-                    config.block.sequence_mixer.use_head_qk_norm
+                config.block.sequence_mixer.qk_norm = LayerNormConfig(
+                    name=LayerNormType.derf,
+                    eps=base_eps,
+                    bias=False,
+                    dtype=config.dtype,
+                    alpha_init_value=0.2,
                 )
+            # Clear the generic layer_norm
+            config.block.layer_norm = None
 
-        # Replace LM head norm if present
+        # Replace LM head norm with alpha_init_value=0.8
         if getattr(config, "lm_head", None) is not None:
             try:
-                config.lm_head.layer_norm = derf_ln
+                config.lm_head.layer_norm = LayerNormConfig(
+                    name=LayerNormType.derf,
+                    eps=base_eps,
+                    bias=False,
+                    dtype=config.dtype,
+                    alpha_init_value=0.8,
+                )
             except Exception:
                 pass
 
@@ -698,30 +725,53 @@ class TransformerConfig(ModelConfig):
     def olmo2_derf_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
         A 100M OLMo2 model config where all LayerNorm usages
-        are replaced with DERF modules.
+        are replaced with DERF modules with different alpha_init_value
+        for embedding_norm (0.8), attention_norm (0.2), feed_forward_norm (0.8),
+        and lm_head.layer_norm (0.8).
         """
         # Build the standard 100M config first
         config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
 
-        # Create a LayerNormConfig that points to the DERF implementation
-        derf_ln = LayerNormConfig(
+        base_eps = config.block.layer_norm.eps if config.block and config.block.layer_norm else None
+
+        # Replace global embedding norm with alpha_init_value=0.8
+        config.embedding_norm = LayerNormConfig(
             name=LayerNormType.derf,
-            eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None,
+            eps=base_eps,
             bias=False,
             dtype=config.dtype,
+            alpha_init_value=0.8,
         )
 
-        # Replace global embedding norm
-        config.embedding_norm = derf_ln
-
-        # Replace block-level layer norm
+        # Replace block-level layer norm with separate configs for attention and feed_forward
         if isinstance(config.block, TransformerBlockConfig):
-            config.block.layer_norm = derf_ln
+            config.block.attention_norm = LayerNormConfig(
+                name=LayerNormType.derf,
+                eps=base_eps,
+                bias=False,
+                dtype=config.dtype,
+                alpha_init_value=0.2,
+            )
+            config.block.feed_forward_norm = LayerNormConfig(
+                name=LayerNormType.derf,
+                eps=base_eps,
+                bias=False,
+                dtype=config.dtype,
+                alpha_init_value=0.8,
+            )
+            # Clear the generic layer_norm
+            config.block.layer_norm = None
 
-        # Replace LM head norm if present
+        # Replace LM head norm with alpha_init_value=0.8
         if getattr(config, "lm_head", None) is not None:
             try:
-                config.lm_head.layer_norm = derf_ln
+                config.lm_head.layer_norm = LayerNormConfig(
+                    name=LayerNormType.derf,
+                    eps=base_eps,
+                    bias=False,
+                    dtype=config.dtype,
+                    alpha_init_value=0.8,
+                )
             except Exception:
                 pass
 
@@ -732,35 +782,62 @@ class TransformerConfig(ModelConfig):
     def olmo2_all_dyt_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
         A 100M OLMo2 model config where all LayerNorm usages and attention Q/K norms
-        are replaced with dynamic tanh (`dyt`) modules.
+        are replaced with dynamic tanh (`dyt`) modules with different alpha_init_value
+        for embedding_norm (0.8), attention_norm (0.2), feed_forward_norm (0.8),
+        qk_norm (0.2), and lm_head.layer_norm (0.8).
         """
         # Build the standard 100M config first
         config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
 
-        # Create a LayerNormConfig that points to the DynamicTanh implementation
-        dyt_ln = LayerNormConfig(
+        base_eps = config.block.layer_norm.eps if config.block and config.block.layer_norm else None
+
+        # Replace global embedding norm with alpha_init_value=0.8
+        config.embedding_norm = LayerNormConfig(
             name=LayerNormType.dyt,
-            eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None,
+            eps=base_eps,
             bias=False,
             dtype=config.dtype,
+            alpha_init_value=0.8,
         )
 
-        # Replace global embedding norm
-        config.embedding_norm = dyt_ln
-
-        # Replace block-level layer norm and attention qk_norm
+        # Replace block-level layer norm with separate configs for attention and feed_forward
         if isinstance(config.block, TransformerBlockConfig):
-            config.block.layer_norm = dyt_ln
+            config.block.attention_norm = LayerNormConfig(
+                name=LayerNormType.dyt,
+                eps=base_eps,
+                bias=False,
+                dtype=config.dtype,
+                alpha_init_value=0.2,
+            )
+            config.block.feed_forward_norm = LayerNormConfig(
+                name=LayerNormType.dyt,
+                eps=base_eps,
+                bias=False,
+                dtype=config.dtype,
+                alpha_init_value=0.8,
+            )
+            # Update attention qk_norm with alpha_init_value=0.2
             if hasattr(config.block, "sequence_mixer") and config.block.sequence_mixer is not None:
-                config.block.sequence_mixer.qk_norm = dyt_ln
-                config.block.sequence_mixer.use_head_qk_norm = (
-                    config.block.sequence_mixer.use_head_qk_norm
+                config.block.sequence_mixer.qk_norm = LayerNormConfig(
+                    name=LayerNormType.dyt,
+                    eps=base_eps,
+                    bias=False,
+                    dtype=config.dtype,
+                    alpha_init_value=0.2,
                 )
+            # Clear the generic layer_norm
+            config.block.layer_norm = None
 
-        # Replace LM head norm if present
+        # Replace LM head norm with alpha_init_value=0.8
         if getattr(config, "lm_head", None) is not None:
             try:
-                config.lm_head.layer_norm = dyt_ln
+                config.lm_head.layer_norm = LayerNormConfig(
+                    name=LayerNormType.dyt,
+                    eps=base_eps,
+                    bias=False,
+                    dtype=config.dtype,
+                    alpha_init_value=0.8,
+                )
             except Exception:
                 pass
 
@@ -770,30 +847,53 @@ class TransformerConfig(ModelConfig):
     def olmo2_dyt_100M(cls, vocab_size: int, **kwargs) -> "TransformerConfig":
         """
         A 100M OLMo2 model config where all LayerNorm usages
-        are replaced with dynamic tanh (`dyt`) modules.
+        are replaced with dynamic tanh (`dyt`) modules with different alpha_init_value
+        for embedding_norm (0.2), attention_norm (0.8), feed_forward_norm (0.2),
+        and lm_head.layer_norm (0.2).
         """
         # Build the standard 100M config first
         config = cls.olmo2_100M(vocab_size=vocab_size, **kwargs)
 
-        # Create a LayerNormConfig that points to the DynamicTanh implementation
-        dyt_ln = LayerNormConfig(
+        base_eps = config.block.layer_norm.eps if config.block and config.block.layer_norm else None
+
+        # Replace global embedding norm with alpha_init_value=0.3
+        config.embedding_norm = LayerNormConfig(
             name=LayerNormType.dyt,
-            eps=config.block.layer_norm.eps if config.block and config.block.layer_norm else None,
+            eps=base_eps,
             bias=False,
             dtype=config.dtype,
+            alpha_init_value=0.2,
         )
 
-        # Replace global embedding norm
-        config.embedding_norm = dyt_ln
-
-        # Replace block-level layer norm and attention qk_norm
+        # Replace block-level layer norm with separate configs for attention and feed_forward
         if isinstance(config.block, TransformerBlockConfig):
-            config.block.layer_norm = dyt_ln
+            config.block.attention_norm = LayerNormConfig(
+                name=LayerNormType.dyt,
+                eps=base_eps,
+                bias=False,
+                dtype=config.dtype,
+                alpha_init_value=0.8,
+            )
+            config.block.feed_forward_norm = LayerNormConfig(
+                name=LayerNormType.dyt,
+                eps=base_eps,
+                bias=False,
+                dtype=config.dtype,
+                alpha_init_value=0.2,
+            )
+            # Clear the generic layer_norm
+            config.block.layer_norm = None
 
-        # Replace LM head norm if present
+        # Replace LM head norm with alpha_init_value=0.4
         if getattr(config, "lm_head", None) is not None:
             try:
-                config.lm_head.layer_norm = dyt_ln
+                config.lm_head.layer_norm = LayerNormConfig(
+                    name=LayerNormType.dyt,
+                    eps=base_eps,
+                    bias=False,
+                    dtype=config.dtype,
+                    alpha_init_value=0.2,
+                )
             except Exception:
                 pass
 
