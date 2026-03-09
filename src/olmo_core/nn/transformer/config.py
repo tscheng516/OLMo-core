@@ -849,6 +849,14 @@ class TransformerConfig(ModelConfig):
 
         base_eps = config.block.layer_norm.eps if config.block and config.block.layer_norm else None
 
+        config.block.layer_norm = LayerNormConfig(
+            name=LayerNormType.dyt,
+            eps=base_eps,
+            bias=True,
+            dtype=config.dtype,
+            alpha_init_value=0.2,
+        )
+
         # config.embedding_norm = LayerNormConfig(
         #     name=LayerNormType.dyt,
         #     eps=base_eps,
@@ -857,21 +865,21 @@ class TransformerConfig(ModelConfig):
         #     alpha_init_value=0.05,
         # )
 
-        # Replace block-level layer norm with separate configs for attention and feed_forward
-        config.block.attention_norm = LayerNormConfig(
-            name=LayerNormType.dyt,
-            eps=base_eps,
-            bias=True,
-            dtype=config.dtype,
-            alpha_init_value=0.2,
-        )
-        config.block.feed_forward_norm = LayerNormConfig(
-            name=LayerNormType.dyt,
-            eps=base_eps,
-            bias=True,
-            dtype=config.dtype,
-            alpha_init_value=0.05,
-        )
+        # # Replace block-level layer norm with separate configs for attention and feed_forward
+        # config.block.attention_norm = LayerNormConfig(
+        #     name=LayerNormType.dyt,
+        #     eps=base_eps,
+        #     bias=True,
+        #     dtype=config.dtype,
+        #     alpha_init_value=0.2,
+        # )
+        # config.block.feed_forward_norm = LayerNormConfig(
+        #     name=LayerNormType.dyt,
+        #     eps=base_eps,
+        #     bias=True,
+        #     dtype=config.dtype,
+        #     alpha_init_value=0.05,
+        # )
 
         if getattr(config, "lm_head", None) is not None:
             try:
@@ -880,7 +888,7 @@ class TransformerConfig(ModelConfig):
                     eps=base_eps,
                     bias=True,
                     dtype=config.dtype,
-                    alpha_init_value=0.05,
+                    alpha_init_value=0.2,
                 )
             except Exception:
                 pass
