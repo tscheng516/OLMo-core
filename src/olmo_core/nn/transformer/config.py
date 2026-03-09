@@ -850,27 +850,27 @@ class TransformerConfig(ModelConfig):
 
         base_eps = config.block.layer_norm.eps if config.block and config.block.layer_norm else None
 
-        config.embedding_norm = LayerNormConfig(
-            name=LayerNormType.dyt,
-            eps=base_eps,
-            bias=False,
-            dtype=config.dtype,
-            alpha_init_value=0.05,
-        )
+        # config.embedding_norm = LayerNormConfig(
+        #     name=LayerNormType.dyt,
+        #     eps=base_eps,
+        #     bias=True,
+        #     dtype=config.dtype,
+        #     alpha_init_value=0.05,
+        # )
 
         # Replace block-level layer norm with separate configs for attention and feed_forward
         if isinstance(config.block, TransformerBlockConfig):
             config.block.attention_norm = LayerNormConfig(
                 name=LayerNormType.dyt,
                 eps=base_eps,
-                bias=False,
+                bias=True,
                 dtype=config.dtype,
                 alpha_init_value=0.2,
             )
             config.block.feed_forward_norm = LayerNormConfig(
                 name=LayerNormType.dyt,
                 eps=base_eps,
-                bias=False,
+                bias=True,
                 dtype=config.dtype,
                 alpha_init_value=0.05,
             )
@@ -880,7 +880,7 @@ class TransformerConfig(ModelConfig):
                 config.lm_head.layer_norm = LayerNormConfig(
                     name=LayerNormType.dyt,
                     eps=base_eps,
-                    bias=False,
+                    bias=True,
                     dtype=config.dtype,
                     alpha_init_value=0.05,
                 )
