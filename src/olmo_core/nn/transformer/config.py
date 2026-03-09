@@ -1872,6 +1872,7 @@ class TransformerConfig(ModelConfig):
                 gate=gate,
                 qk_norm=layer_norm if qk_norm else None,
                 use_head_qk_norm=use_head_qk_norm if qk_norm else None,
+                v_norm=layer_norm if (block_name == TransformerBlockType.hybrid_norm) else None,  
                 use_flash=use_flash,
                 backend=attn_backend,
                 sliding_window=sliding_window,

@@ -355,7 +355,6 @@ class HybridNormTransformerBlock(TransformerBlock):
                 sequence_mixer.qk_norm = layer_norm
             if sequence_mixer.v_norm is None:
                 sequence_mixer.v_norm = layer_norm
-        sequence_mixer.v_norm = layer_norm
 
         super().__init__(
             d_model=d_model,
