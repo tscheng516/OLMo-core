@@ -703,8 +703,6 @@ class TransformerConfig(ModelConfig):
                     dtype=config.dtype,
                     alpha_init_value=0.2,
                 )
-            # Clear the generic layer_norm
-            config.block.layer_norm = None
 
         # Replace LM head norm with alpha_init_value=0.8
         if getattr(config, "lm_head", None) is not None:
@@ -759,8 +757,6 @@ class TransformerConfig(ModelConfig):
                 dtype=config.dtype,
                 alpha_init_value=0.8,
             )
-            # Clear the generic layer_norm
-            config.block.layer_norm = None
 
         # Replace LM head norm with alpha_init_value=0.8
         if getattr(config, "lm_head", None) is not None:
@@ -825,8 +821,6 @@ class TransformerConfig(ModelConfig):
                     dtype=config.dtype,
                     alpha_init_value=0.2,
                 )
-            # Clear the generic layer_norm
-            config.block.layer_norm = None
 
         # Replace LM head norm with alpha_init_value=0.8
         if getattr(config, "lm_head", None) is not None:
@@ -881,8 +875,6 @@ class TransformerConfig(ModelConfig):
                 dtype=config.dtype,
                 alpha_init_value=0.2,
             )
-            # Clear the generic layer_norm
-            config.block.layer_norm = None
 
         # Replace LM head norm with alpha_init_value=0.4
         if getattr(config, "lm_head", None) is not None:
