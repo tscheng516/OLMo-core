@@ -855,6 +855,7 @@ class TransformerConfig(ModelConfig):
             bias=True,
             dtype=config.dtype,
             alpha_init_value=0.05,
+            elemwise_affine=True,
         )
 
         # config.embedding_norm = LayerNormConfig(
@@ -889,6 +890,7 @@ class TransformerConfig(ModelConfig):
                     bias=True,
                     dtype=config.dtype,
                     alpha_init_value=0.05,
+                    elemwise_affine=True,
                 )
             except Exception:
                 pass
