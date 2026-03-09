@@ -742,21 +742,20 @@ class TransformerConfig(ModelConfig):
         )
 
         # Replace block-level layer norm with separate configs for attention and feed_forward
-        if isinstance(config.block, TransformerBlockConfig):
-            config.block.attention_norm = LayerNormConfig(
-                name=LayerNormType.derf,
-                eps=base_eps,
-                bias=False,
-                dtype=config.dtype,
-                alpha_init_value=0.2,
-            )
-            config.block.feed_forward_norm = LayerNormConfig(
-                name=LayerNormType.derf,
-                eps=base_eps,
-                bias=False,
-                dtype=config.dtype,
-                alpha_init_value=0.8,
-            )
+        config.block.attention_norm = LayerNormConfig(
+            name=LayerNormType.derf,
+            eps=base_eps,
+            bias=False,
+            dtype=config.dtype,
+            alpha_init_value=0.2,
+        )
+        config.block.feed_forward_norm = LayerNormConfig(
+            name=LayerNormType.derf,
+            eps=base_eps,
+            bias=False,
+            dtype=config.dtype,
+            alpha_init_value=0.8,
+        )
 
         # Replace LM head norm with alpha_init_value=0.8
         if getattr(config, "lm_head", None) is not None:
